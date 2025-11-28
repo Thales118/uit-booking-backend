@@ -111,6 +111,40 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
+// API: Đổi mật khẩu
+app.post("/api/auth/change-password", authenticateToken, async (req, res) => {
+  try {
+    const user_id = req.user.id;
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: "Vui lòng nhập đủ thông tin" });
+    }
+
+    // 1. Lấy mật khẩu đã mã hóa hiện tại trong DB
+    const userResult = await db.query("SELECT password FROM profiles WHERE id = $1", [user_id]);
+    const user = userResult.rows[0];
+
+    // 2. Kiểm tra mật khẩu cũ có đúng không
+    const validPassword = await bcrypt.compare(currentPassword, user.password);
+    if (!validPassword) {
+      return res.status(400).json({ error: "Mật khẩu hiện tại không đúng" });
+    }
+
+    // 3. Mã hóa mật khẩu mới
+    const salt = await bcrypt.genSalt(10);
+    const hashedNewPassword = await bcrypt.hash(newPassword, salt);
+
+    // 4. Cập nhật vào Database
+    await db.query("UPDATE profiles SET password = $1 WHERE id = $2", [hashedNewPassword, user_id]);
+
+    res.json({ message: "Đổi mật khẩu thành công" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Lỗi đổi mật khẩu" });
+  }
+});
+
 // --- 5. ROUTES DỮ LIỆU (Phòng & Đặt phòng) ---
 
 app.get("/api/rooms", async (req, res) => {
