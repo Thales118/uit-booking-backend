@@ -1,34 +1,274 @@
 const express = require("express");
-const cors = require("cors"); 
+const cors = require("cors");
 const dotenv = require("dotenv");
 const db = require("./db");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const nodemailer = require("nodemailer");
+
+// --- SWAGGER IMPORTS ---
+const swaggerUi = require('swagger-ui-express');
+const swaggerJsdoc = require('swagger-jsdoc');
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*"); 
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization"); 
+// --- CẤU HÌNH SWAGGER (FULL 16 API) ---
+const swaggerDefinition = {
+  openapi: '3.0.0',
+  info: {
+    title: 'UIT Booking API',
+    version: '1.0.0',
+    description: 'Tài liệu API đầy đủ cho hệ thống đặt phòng UIT',
+  },
+  servers: [
+    { url: process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}` },
+  ],
+  components: {
+    securitySchemes: {
+      bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+    },
+  },
+  security: [{ bearerAuth: [] }],
+  paths: {
+    // --- AUTH ---
+    '/api/auth/register': {
+      post: {
+        summary: 'Đăng ký tài khoản',
+        tags: ['Auth'],
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  email: { type: 'string' },
+                  password: { type: 'string' },
+                  fullName: { type: 'string' },
+                  studentId: { type: 'string' }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: 'OK' } }
+      }
+    },
+    '/api/auth/login': {
+      post: {
+        summary: 'Đăng nhập',
+        tags: ['Auth'],
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  email: { type: 'string' },
+                  password: { type: 'string' }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: 'Trả về Token' } }
+      }
+    },
+    '/api/auth/change-password': {
+      post: {
+        summary: 'Đổi mật khẩu',
+        tags: ['Auth'],
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  currentPassword: { type: 'string' },
+                  newPassword: { type: 'string' }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: 'OK' } }
+      }
+    },
+    '/api/auth/forgot-password': {
+      post: {
+        summary: 'Quên mật khẩu (Gửi email)',
+        tags: ['Auth'],
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { email: { type: 'string' } }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: 'Email sent' } }
+      }
+    },
 
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
+    // --- USER ---
+    '/api/profile': {
+      get: {
+        summary: 'Lấy thông tin cá nhân',
+        tags: ['User'],
+        responses: { 200: { description: 'OK' } }
+      },
+      patch: {
+        summary: 'Cập nhật thông tin',
+        tags: ['User'],
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  full_name: { type: 'string' },
+                  phone: { type: 'string' }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: 'OK' } }
+      }
+    },
+
+    // --- ROOMS ---
+    '/api/rooms': {
+      get: {
+        summary: 'Lấy danh sách phòng',
+        tags: ['Booking'],
+        security: [],
+        responses: { 200: { description: 'OK' } }
+      }
+    },
+
+    // --- BOOKING ---
+    '/api/bookings': {
+      get: {
+        summary: 'Lịch sử đặt phòng của tôi',
+        tags: ['Booking'],
+        responses: { 200: { description: 'OK' } }
+      },
+      post: {
+        summary: 'Tạo booking mới',
+        tags: ['Booking'],
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  room_id: { type: 'string' },
+                  booking_date: { type: 'string' },
+                  slot_start: { type: 'string' },
+                  slot_end: { type: 'string' },
+                  purpose: { type: 'string' },
+                  notes: { type: 'string' }
+                }
+              }
+            }
+          }
+        },
+        responses: { 200: { description: 'OK' } }
+      }
+    },
+    '/api/bookings/check': {
+      get: {
+        summary: 'Kiểm tra giờ bận (Check availability)',
+        tags: ['Booking'],
+        parameters: [
+          { name: 'roomId', in: 'query', schema: { type: 'string' } },
+          { name: 'date', in: 'query', schema: { type: 'string' } }
+        ],
+        responses: { 200: { description: 'OK' } }
+      }
+    },
+    '/api/bookings/{id}': {
+      get: {
+        summary: 'Xem chi tiết 1 booking (cho QR)',
+        tags: ['Booking'],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'OK' } }
+      }
+    },
+    '/api/bookings/{id}/cancel': {
+      patch: {
+        summary: 'Hủy đặt phòng',
+        tags: ['Booking'],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'OK' } }
+      }
+    },
+    '/api/bookings/{id}/checkin': {
+      patch: {
+        summary: 'Check-in (Quét QR)',
+        tags: ['Booking'],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'OK' } }
+      }
+    },
+
+    // --- ADMIN ---
+    '/api/admin/stats': {
+      get: {
+        summary: 'Thống kê hệ thống',
+        tags: ['Admin'],
+        responses: { 200: { description: 'OK' } }
+      }
+    },
+    '/api/admin/bookings': {
+      get: {
+        summary: 'Xem tất cả booking',
+        tags: ['Admin'],
+        responses: { 200: { description: 'OK' } }
+      }
+    },
+    '/api/admin/bookings/{id}/{action}': {
+      patch: {
+        summary: 'Duyệt hoặc Từ chối',
+        tags: ['Admin'],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'action', in: 'path', required: true, schema: { type: 'string', enum: ['approve', 'reject'] } }
+        ],
+        responses: { 200: { description: 'OK' } }
+      }
+    }
   }
-  next();
-});
+};
 
+const options = {
+  definition: swaggerDefinition,
+  apis: [], 
+};
+
+const specs = swaggerJsdoc(options);
+
+// --- MIDDLEWARES ---
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
 app.use(express.json());
 
-// Kiểm tra đăng nhập
+// 👉 ĐƯỜNG DẪN TÀI LIỆU API
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
+
+// --- AUTH MIDDLEWARES ---
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) return res.status(401).json({ error: "Bạn chưa đăng nhập" });
+  if (!token) return res.status(401).json({ error: "Chưa đăng nhập" });
 
   jwt.verify(token, process.env.JWT_SECRET || "bi_mat_khong_the_bat_mi", (err, user) => {
     if (err) return res.status(403).json({ error: "Token không hợp lệ" });
@@ -37,31 +277,16 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// Kiểm tra quyền Admin 
 const requireAdmin = (req, res, next) => {
   if (!req.user || req.user.role !== 'admin') {
-    return res.status(403).json({ error: "Bạn không có quyền truy cập (Admin only)" });
+    return res.status(403).json({ error: "Yêu cầu quyền Admin" });
   }
   next();
 };
 
-// --- 3. ROUTES CƠ BẢN ---
-
-app.get("/", (req, res) => {
-  res.send("Backend server is running correctly!");
-});
-
-app.get("/test-db", async (req, res) => {
-  try {
-    const result = await db.query("SELECT NOW()");
-    res.json({ message: "Kết nối Database thành công!", time: result.rows[0].now });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Lỗi kết nối Database" });
-  }
-});
-
-// --- 4. ROUTES AUTH (Đăng ký/Đăng nhập) ---
+// ==========================================
+// API ROUTES (LOGIC)
+// ==========================================
 
 app.post("/api/auth/register", async (req, res) => {
   try {
@@ -73,276 +298,192 @@ app.post("/api/auth/register", async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const newUser = await db.query(
-      `INSERT INTO profiles (email, password, full_name, student_id, role) 
-       VALUES ($1, $2, $3, $4, 'student') RETURNING *`,
+      `INSERT INTO profiles (email, password, full_name, student_id, role) VALUES ($1, $2, $3, $4, 'student') RETURNING *`,
       [email, hashedPassword, fullName, studentId]
     );
     res.json({ message: "Đăng ký thành công!", user: newUser.rows[0] });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Lỗi server" });
-  }
+  } catch (err) { res.status(500).json({ error: "Lỗi server" }); }
 });
 
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body;
     const result = await db.query("SELECT * FROM profiles WHERE email = $1", [email]);
-    if (result.rows.length === 0) return res.status(400).json({ error: "Sai email hoặc mật khẩu" });
+    if (result.rows.length === 0) return res.status(400).json({ error: "Sai thông tin" });
 
     const user = result.rows[0];
     const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) return res.status(400).json({ error: "Sai email hoặc mật khẩu" });
+    if (!validPassword) return res.status(400).json({ error: "Sai thông tin" });
 
-    const token = jwt.sign(
-      { id: user.id, role: user.role }, 
-      process.env.JWT_SECRET || "bi_mat_khong_the_bat_mi", 
-      { expiresIn: "1d" }
-    );
-
-    res.json({
-      message: "Đăng nhập thành công",
-      token,
-      user: { id: user.id, email: user.email, full_name: user.full_name, role: user.role }
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Lỗi server" });
-  }
+    const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET || "bi_mat_khong_the_bat_mi", { expiresIn: "1d" });
+    res.json({ message: "Thành công", token, user: { id: user.id, email: user.email, full_name: user.full_name, role: user.role } });
+  } catch (err) { res.status(500).json({ error: "Lỗi server" }); }
 });
 
-// API: Đổi mật khẩu
-app.post("/api/auth/change-password", authenticateToken, async (req, res) => {
+app.get("/api/profile", authenticateToken, async (req, res) => {
   try {
-    const user_id = req.user.id;
-    const { currentPassword, newPassword } = req.body;
-
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({ error: "Vui lòng nhập đủ thông tin" });
-    }
-
-    // 1. Lấy mật khẩu đã mã hóa hiện tại trong DB
-    const userResult = await db.query("SELECT password FROM profiles WHERE id = $1", [user_id]);
-    const user = userResult.rows[0];
-
-    // 2. Kiểm tra mật khẩu cũ có đúng không
-    const validPassword = await bcrypt.compare(currentPassword, user.password);
-    if (!validPassword) {
-      return res.status(400).json({ error: "Mật khẩu hiện tại không đúng" });
-    }
-
-    // 3. Mã hóa mật khẩu mới
-    const salt = await bcrypt.genSalt(10);
-    const hashedNewPassword = await bcrypt.hash(newPassword, salt);
-
-    // 4. Cập nhật vào Database
-    await db.query("UPDATE profiles SET password = $1 WHERE id = $2", [hashedNewPassword, user_id]);
-
-    res.json({ message: "Đổi mật khẩu thành công" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Lỗi đổi mật khẩu" });
-  }
+    const result = await db.query("SELECT id, email, full_name, student_id, phone, role FROM profiles WHERE id = $1", [req.user.id]);
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
 
-// --- 5. ROUTES DỮ LIỆU (Phòng & Đặt phòng) ---
+app.patch("/api/profile", authenticateToken, async (req, res) => {
+  try {
+    const { full_name, phone } = req.body;
+    await db.query("UPDATE profiles SET full_name = $1, phone = $2 WHERE id = $3", [full_name, phone, req.user.id]);
+    res.json({ message: "Cập nhật thành công" });
+  } catch (err) { res.status(500).json({ error: "Lỗi" }); }
+});
 
 app.get("/api/rooms", async (req, res) => {
   try {
     const result = await db.query("SELECT * FROM rooms WHERE is_active = true ORDER BY name ASC");
     res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: "Lỗi lấy danh sách phòng" });
-  }
+  } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
 
-// API: Đặt phòng mới 
 app.post("/api/bookings", authenticateToken, async (req, res) => {
   try {
     const { room_id, booking_date, slot_start, slot_end, purpose, notes } = req.body;
-    const user_id = req.user.id; 
-
-    // Kiểm tra dữ liệu đầu vào
-    if (!room_id || !booking_date || !slot_start || !slot_end || !purpose) {
-      return res.status(400).json({ error: "Thiếu thông tin bắt buộc" });
-    }
-
-    //KIỂM TRA TRÙNG LỊCH 
     
-    // Logic: Tìm xem có booking nào trong DB thỏa mãn:
-    // 1. Cùng phòng, cùng ngày
-    // 2. Trạng thái KHÔNG PHẢI là cancelled hoặc rejected
-    // 3. Thời gian đè lên nhau
-    const conflictCheck = await db.query(
-      `SELECT * FROM bookings 
-       WHERE room_id = $1 
-       AND booking_date = $2
-       AND status NOT IN ('cancelled', 'rejected')
-       AND (slot_start < $4 AND slot_end > $3)`,
+    // Check trùng
+    const conflict = await db.query(
+      `SELECT * FROM bookings WHERE room_id=$1 AND booking_date=$2 AND status NOT IN ('cancelled', 'rejected') AND (slot_start < $4 AND slot_end > $3)`,
       [room_id, booking_date, slot_start, slot_end]
     );
+    if (conflict.rows.length > 0) return res.status(409).json({ error: "Đã trùng lịch" });
 
-    // Nếu tìm thấy ít nhất 1 dòng -> Có người đặt rồi -> Báo lỗi ngay
-    if (conflictCheck.rows.length > 0) {
-      return res.status(409).json({ 
-        error: "Phòng này đã kín trong khung giờ bạn chọn! Vui lòng chọn giờ khác." 
-      });
-    }
-
-    // Nếu không trùng thì mới Insert vào Database
     const newBooking = await db.query(
-      `INSERT INTO bookings (user_id, room_id, booking_date, slot_start, slot_end, purpose, notes, status) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending') RETURNING *`,
-      [user_id, room_id, booking_date, slot_start, slot_end, purpose, notes]
+      `INSERT INTO bookings (user_id, room_id, booking_date, slot_start, slot_end, purpose, notes, status) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending') RETURNING *`,
+      [req.user.id, room_id, booking_date, slot_start, slot_end, purpose, notes]
     );
-
-    res.json({ message: "Đặt phòng thành công!", booking: newBooking.rows[0] });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Lỗi server khi đặt phòng" });
-  }
+    res.json({ message: "Thành công", booking: newBooking.rows[0] });
+  } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
 
 app.get("/api/bookings", authenticateToken, async (req, res) => {
   try {
-    const user_id = req.user.id;
-    const result = await db.query(`
-      SELECT b.*, r.name as room_name, r.type as room_type 
-      FROM bookings b
-      JOIN rooms r ON b.room_id = r.id
-      WHERE b.user_id = $1
-      ORDER BY b.booking_date DESC
-    `, [user_id]);
-    
+    const result = await db.query(`SELECT b.*, r.name as room_name, r.type as room_type FROM bookings b JOIN rooms r ON b.room_id = r.id WHERE b.user_id = $1 ORDER BY b.booking_date DESC`, [req.user.id]);
     const formatted = result.rows.map(row => ({
-      id: row.id, booking_date: row.booking_date, slot_start: row.slot_start, slot_end: row.slot_end,
-      status: row.status, purpose: row.purpose, notes: row.notes, qr_code: row.qr_code,
-      room: { name: row.room_name, type: row.room_type }
+      id: row.id, booking_date: row.booking_date, slot_start: row.slot_start, slot_end: row.slot_end, status: row.status, purpose: row.purpose, room: { name: row.room_name, type: row.room_type }
     }));
     res.json(formatted);
-  } catch (err) {
-    res.status(500).json({ error: "Lỗi lấy lịch sử" });
-  }
+  } catch (err) { res.status(500).json({ error: "Lỗi" }); }
+});
+
+app.get("/api/bookings/check", async (req, res) => {
+  try {
+    const { roomId, date } = req.query;
+    const result = await db.query("SELECT slot_start, slot_end, status FROM bookings WHERE room_id = $1 AND booking_date = $2 AND status IN ('pending', 'approved')", [roomId, date]);
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: "Lỗi" }); }
+});
+
+app.get("/api/bookings/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await db.query(`SELECT b.*, r.name as room_name, r.type as room_type, r.image_url, p.full_name, p.student_id, p.email FROM bookings b JOIN rooms r ON b.room_id = r.id JOIN profiles p ON b.user_id = p.id WHERE b.id = $1`, [id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: "Không tìm thấy" });
+    
+    const row = result.rows[0];
+    const booking = {
+      id: row.id, booking_date: row.booking_date, slot_start: row.slot_start, slot_end: row.slot_end, status: row.status, purpose: row.purpose,
+      room: { name: row.room_name, type: row.room_type, image: row.image_url }, profile: { full_name: row.full_name, student_id: row.student_id, email: row.email }
+    };
+    res.json(booking);
+  } catch (err) { res.status(500).json({ error: "Lỗi server" }); }
 });
 
 app.patch("/api/bookings/:id/cancel", authenticateToken, async (req, res) => {
   try {
     const bookingId = req.params.id;
-    const user_id = req.user.id;
-    await db.query("UPDATE bookings SET status = 'cancelled' WHERE id = $1 AND user_id = $2", [bookingId, user_id]);
+    await db.query("UPDATE bookings SET status = 'cancelled' WHERE id = $1 AND user_id = $2", [bookingId, req.user.id]);
     res.json({ message: "Đã hủy" });
-  } catch (err) {
-    res.status(500).json({ error: "Lỗi hủy" });
-  }
+  } catch (err) { res.status(500).json({ error: "Lỗi hủy" }); }
 });
 
-// --- 6. ROUTES ADMIN ---
-// 👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇
-
-// Lấy danh sách Booking (Admin)
-app.get("/api/admin/bookings", authenticateToken, requireAdmin, async (req, res) => {
+app.patch("/api/bookings/:id/checkin", authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const result = await db.query(`
-      SELECT b.*, r.name as room_name, r.type as room_type,
-             p.full_name, p.email, p.student_id
-      FROM bookings b
-      JOIN rooms r ON b.room_id = r.id
-      JOIN profiles p ON b.user_id = p.id
-      ORDER BY b.created_at DESC
-    `);
-
-    const formatted = result.rows.map(row => ({
-      id: row.id, booking_date: row.booking_date, slot_start: row.slot_start, slot_end: row.slot_end,
-      status: row.status, purpose: row.purpose, notes: row.notes,
-      room: { name: row.room_name, type: row.room_type },
-      profile: { full_name: row.full_name, email: row.email, student_id: row.student_id }
-    }));
-    res.json(formatted);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Lỗi Admin Bookings" });
-  }
+    const { id } = req.params;
+    await db.query("UPDATE bookings SET status = 'completed' WHERE id = $1", [id]);
+    res.json({ message: "Check-in thành công!" });
+  } catch (err) { res.status(500).json({ error: "Lỗi check-in" }); }
 });
 
-// Lấy thống kê (Admin)
+// --- ADMIN ROUTES ---
 app.get("/api/admin/stats", authenticateToken, requireAdmin, async (req, res) => {
   try {
     const totalBookings = await db.query("SELECT COUNT(*) FROM bookings");
     const pendingCount = await db.query("SELECT COUNT(*) FROM bookings WHERE status = 'pending'");
     const totalUsers = await db.query("SELECT COUNT(*) FROM profiles WHERE role = 'student'");
     const activeRooms = await db.query("SELECT COUNT(*) FROM rooms WHERE is_active = true");
-
     res.json({
       totalBookings: parseInt(totalBookings.rows[0].count),
       pendingCount: parseInt(pendingCount.rows[0].count),
       totalUsers: parseInt(totalUsers.rows[0].count),
       activeRooms: parseInt(activeRooms.rows[0].count),
     });
-  } catch (err) {
-    res.status(500).json({ error: "Lỗi Stats" });
-  }
+  } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
 
-// Duyệt / Từ chối
+app.get("/api/admin/bookings", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const result = await db.query(`SELECT b.*, r.name as room_name, r.type as room_type, p.full_name, p.email, p.student_id FROM bookings b JOIN rooms r ON b.room_id = r.id JOIN profiles p ON b.user_id = p.id ORDER BY b.created_at DESC`);
+    const formatted = result.rows.map(row => ({
+      id: row.id, booking_date: row.booking_date, slot_start: row.slot_start, slot_end: row.slot_end, status: row.status, purpose: row.purpose, notes: row.notes,
+      room: { name: row.room_name, type: row.room_type }, profile: { full_name: row.full_name, email: row.email, student_id: row.student_id }
+    }));
+    res.json(formatted);
+  } catch (err) { res.status(500).json({ error: "Lỗi" }); }
+});
+
 app.patch("/api/admin/bookings/:id/:action", authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id, action } = req.params;
     const status = action === 'approve' ? 'approved' : 'rejected';
-    const adminId = req.user.id;
-    
-    // Nếu là approve thì tạo QR code (giả lập bằng booking ID)
-    const qr_code = action === 'approve' ? id : null;
-
-    await db.query(`
-      UPDATE bookings 
-      SET status = $1, approved_by = $2, approved_at = NOW(), qr_code = $3
-      WHERE id = $4
-    `, [status, adminId, qr_code, id]);
-
+    await db.query(`UPDATE bookings SET status = $1, approved_by = $2, approved_at = NOW() WHERE id = $3`, [status, req.user.id, id]);
     res.json({ message: "Thành công" });
-  } catch (err) {
-    res.status(500).json({ error: "Lỗi duyệt" });
-  }
+  } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
 
-// --- KHU VỰC PROFILE (Thông tin cá nhân) ---
-
-// 1. Lấy thông tin cá nhân chi tiết
-app.get("/api/profile", authenticateToken, async (req, res) => {
+app.post("/api/auth/change-password", authenticateToken, async (req, res) => {
   try {
-    const user_id = req.user.id;
-    const result = await db.query("SELECT id, email, full_name, student_id, phone, role, avatar_url FROM profiles WHERE id = $1", [user_id]);
+    const { currentPassword, newPassword } = req.body;
+    const userResult = await db.query("SELECT password FROM profiles WHERE id = $1", [req.user.id]);
+    const valid = await bcrypt.compare(currentPassword, userResult.rows[0].password);
+    if (!valid) return res.status(400).json({ error: "Mật khẩu cũ sai" });
     
-    if (result.rows.length === 0) return res.status(404).json({ error: "Không tìm thấy user" });
-    
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Lỗi lấy thông tin profile" });
-  }
+    const hash = await bcrypt.hash(newPassword, 10);
+    await db.query("UPDATE profiles SET password = $1 WHERE id = $2", [hash, req.user.id]);
+    res.json({ message: "Thành công" });
+  } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
 
-// 2. Cập nhật thông tin (Tên, SĐT)
-app.patch("/api/profile", authenticateToken, async (req, res) => {
+app.post("/api/auth/forgot-password", async (req, res) => {
   try {
-    const user_id = req.user.id;
-    const { full_name, phone } = req.body;
+    const { email } = req.body;
+    const user = await db.query("SELECT * FROM profiles WHERE email = $1", [email]);
+    if (user.rows.length === 0) return res.status(404).json({ error: "Email không tồn tại" });
 
-    const result = await db.query(
-      `UPDATE profiles 
-       SET full_name = $1, phone = $2 
-       WHERE id = $3 
-       RETURNING id, email, full_name, student_id, phone, role`,
-      [full_name, phone, user_id]
-    );
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+    });
 
-    res.json({ message: "Cập nhật thành công", user: result.rows[0] });
-  } catch (err) {
+    await transporter.sendMail({
+      from: '"UIT Booking" <no-reply@uit.edu.vn>',
+      to: email,
+      subject: "Đặt lại mật khẩu",
+      text: "Vui lòng liên hệ Admin để đặt lại mật khẩu.", 
+    });
+    res.json({ message: "Đã gửi email" });
+  } catch (err) { 
     console.error(err);
-    res.status(500).json({ error: "Lỗi cập nhật profile" });
+    res.status(500).json({ error: "Lỗi gửi mail (Kiểm tra .env)" }); 
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`📄 API Docs: http://localhost:${PORT}/api-docs`);
 });
