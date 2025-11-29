@@ -5,7 +5,6 @@ const db = require("./db");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
-// --- SWAGGER IMPORTS ---
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsdoc = require('swagger-jsdoc');
 
@@ -14,13 +13,13 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// --- CẤU HÌNH SWAGGER (DẠNG OBJECT) ---
+// --- CẤU HÌNH SWAGGER ---
 const swaggerDefinition = {
   openapi: '3.0.0',
   info: {
     title: 'UIT Booking API',
     version: '1.0.0',
-    description: 'Tài liệu API cho hệ thống đặt phòng UIT',
+    description: 'Tài liệu API hệ thống đặt phòng UIT',
   },
   servers: [
     { url: process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}` },
@@ -51,7 +50,7 @@ const swaggerDefinition = {
             }
           }
         },
-        responses: { 200: { description: 'Đăng ký thành công' } }
+        responses: { 200: { description: 'OK' } }
       }
     },
     '/api/auth/login': {
@@ -71,7 +70,7 @@ const swaggerDefinition = {
             }
           }
         },
-        responses: { 200: { description: 'Trả về Token' } }
+        responses: { 200: { description: 'OK' } }
       }
     },
     '/api/auth/change-password': {
@@ -94,7 +93,6 @@ const swaggerDefinition = {
         responses: { 200: { description: 'OK' } }
       }
     },
-    // Đã xóa phần forgot-password ở đây để tránh lỗi
     '/api/profile': {
       get: {
         summary: 'Lấy thông tin cá nhân',
@@ -124,7 +122,7 @@ const swaggerDefinition = {
       get: {
         summary: 'Lấy danh sách phòng',
         tags: ['Booking'],
-        security: [], // Public
+        security: [],
         responses: { 200: { description: 'OK' } }
       }
     },
@@ -158,7 +156,7 @@ const swaggerDefinition = {
     },
     '/api/bookings/check': {
       get: {
-        summary: 'Kiểm tra giờ bận',
+        summary: 'Check lịch trống',
         tags: ['Booking'],
         parameters: [
           { name: 'roomId', in: 'query', schema: { type: 'string' } },
@@ -169,9 +167,9 @@ const swaggerDefinition = {
     },
     '/api/bookings/{id}': {
       get: {
-        summary: 'Xem chi tiết 1 booking',
+        summary: 'Chi tiết booking (QR)',
         tags: ['Booking'],
-        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        parameters: [{ name: 'id', in: 'path', schema: { type: 'string' } }],
         responses: { 200: { description: 'OK' } }
       }
     },
@@ -179,21 +177,21 @@ const swaggerDefinition = {
       patch: {
         summary: 'Hủy đặt phòng',
         tags: ['Booking'],
-        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        parameters: [{ name: 'id', in: 'path', schema: { type: 'string' } }],
         responses: { 200: { description: 'OK' } }
       }
     },
     '/api/bookings/{id}/checkin': {
       patch: {
-        summary: 'Check-in (Quét QR)',
+        summary: 'Check-in (Admin)',
         tags: ['Booking'],
-        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        parameters: [{ name: 'id', in: 'path', schema: { type: 'string' } }],
         responses: { 200: { description: 'OK' } }
       }
     },
     '/api/admin/stats': {
       get: {
-        summary: 'Thống kê hệ thống',
+        summary: 'Thống kê Admin',
         tags: ['Admin'],
         responses: { 200: { description: 'OK' } }
       }
@@ -207,11 +205,11 @@ const swaggerDefinition = {
     },
     '/api/admin/bookings/{id}/{action}': {
       patch: {
-        summary: 'Duyệt hoặc Từ chối',
+        summary: 'Duyệt/Từ chối',
         tags: ['Admin'],
         parameters: [
-          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
-          { name: 'action', in: 'path', required: true, schema: { type: 'string', enum: ['approve', 'reject'] } }
+          { name: 'id', in: 'path', schema: { type: 'string' } },
+          { name: 'action', in: 'path', schema: { type: 'string' } }
         ],
         responses: { 200: { description: 'OK' } }
       }
@@ -221,12 +219,10 @@ const swaggerDefinition = {
 
 const options = {
   definition: swaggerDefinition,
-  apis: [], 
+  apis: [],
 };
-
 const specs = swaggerJsdoc(options);
 
-// --- MIDDLEWARES ---
 app.use(cors({
   origin: "*",
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
@@ -234,48 +230,35 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// 👉 ĐƯỜNG DẪN TÀI LIỆU API
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 
-// --- AUTH MIDDLEWARES ---
+// --- MIDDLEWARES ---
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   if (!token) return res.status(401).json({ error: "Chưa đăng nhập" });
-
   jwt.verify(token, process.env.JWT_SECRET || "bi_mat_khong_the_bat_mi", (err, user) => {
-    if (err) return res.status(403).json({ error: "Token không hợp lệ" });
+    if (err) return res.status(403).json({ error: "Token lỗi" });
     req.user = user;
     next();
   });
 };
 
 const requireAdmin = (req, res, next) => {
-  if (!req.user || req.user.role !== 'admin') {
-    return res.status(403).json({ error: "Yêu cầu quyền Admin" });
-  }
+  if (!req.user || req.user.role !== 'admin') return res.status(403).json({ error: "Cần quyền Admin" });
   next();
 };
 
-// ==========================================
-// API ROUTES (LOGIC)
-// ==========================================
-
+// --- LOGIC API ---
 app.post("/api/auth/register", async (req, res) => {
   try {
     const { email, password, fullName, studentId } = req.body;
     const userExist = await db.query("SELECT * FROM profiles WHERE email = $1", [email]);
-    if (userExist.rows.length > 0) return res.status(400).json({ error: "Email đã tồn tại" });
-
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    const newUser = await db.query(
-      `INSERT INTO profiles (email, password, full_name, student_id, role) VALUES ($1, $2, $3, $4, 'student') RETURNING *`,
-      [email, hashedPassword, fullName, studentId]
-    );
-    res.json({ message: "Đăng ký thành công!", user: newUser.rows[0] });
-  } catch (err) { res.status(500).json({ error: "Lỗi server" }); }
+    if (userExist.rows.length > 0) return res.status(400).json({ error: "Email tồn tại" });
+    const hash = await bcrypt.hash(password, 10);
+    const newUser = await db.query(`INSERT INTO profiles (email, password, full_name, student_id, role) VALUES ($1, $2, $3, $4, 'student') RETURNING *`, [email, hash, fullName, studentId]);
+    res.json({ message: "OK", user: newUser.rows[0] });
+  } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
 
 app.post("/api/auth/login", async (req, res) => {
@@ -283,19 +266,27 @@ app.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body;
     const result = await db.query("SELECT * FROM profiles WHERE email = $1", [email]);
     if (result.rows.length === 0) return res.status(400).json({ error: "Sai thông tin" });
-
     const user = result.rows[0];
-    const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) return res.status(400).json({ error: "Sai thông tin" });
-
+    if (!await bcrypt.compare(password, user.password)) return res.status(400).json({ error: "Sai thông tin" });
     const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET || "bi_mat_khong_the_bat_mi", { expiresIn: "1d" });
-    res.json({ message: "Thành công", token, user: { id: user.id, email: user.email, full_name: user.full_name, role: user.role } });
-  } catch (err) { res.status(500).json({ error: "Lỗi server" }); }
+    res.json({ message: "OK", token, user });
+  } catch (err) { res.status(500).json({ error: "Lỗi" }); }
+});
+
+app.post("/api/auth/change-password", authenticateToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const userResult = await db.query("SELECT password FROM profiles WHERE id = $1", [req.user.id]);
+    if (!await bcrypt.compare(currentPassword, userResult.rows[0].password)) return res.status(400).json({ error: "Mật khẩu cũ sai" });
+    const hash = await bcrypt.hash(newPassword, 10);
+    await db.query("UPDATE profiles SET password = $1 WHERE id = $2", [hash, req.user.id]);
+    res.json({ message: "OK" });
+  } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
 
 app.get("/api/profile", authenticateToken, async (req, res) => {
   try {
-    const result = await db.query("SELECT id, email, full_name, student_id, phone, role FROM profiles WHERE id = $1", [req.user.id]);
+    const result = await db.query("SELECT * FROM profiles WHERE id = $1", [req.user.id]);
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
@@ -304,7 +295,7 @@ app.patch("/api/profile", authenticateToken, async (req, res) => {
   try {
     const { full_name, phone } = req.body;
     await db.query("UPDATE profiles SET full_name = $1, phone = $2 WHERE id = $3", [full_name, phone, req.user.id]);
-    res.json({ message: "Cập nhật thành công" });
+    res.json({ message: "OK" });
   } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
 
@@ -318,28 +309,17 @@ app.get("/api/rooms", async (req, res) => {
 app.post("/api/bookings", authenticateToken, async (req, res) => {
   try {
     const { room_id, booking_date, slot_start, slot_end, purpose, notes } = req.body;
-    
-    // Check trùng
-    const conflict = await db.query(
-      `SELECT * FROM bookings WHERE room_id=$1 AND booking_date=$2 AND status NOT IN ('cancelled', 'rejected') AND (slot_start < $4 AND slot_end > $3)`,
-      [room_id, booking_date, slot_start, slot_end]
-    );
-    if (conflict.rows.length > 0) return res.status(409).json({ error: "Đã trùng lịch" });
-
-    const newBooking = await db.query(
-      `INSERT INTO bookings (user_id, room_id, booking_date, slot_start, slot_end, purpose, notes, status) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending') RETURNING *`,
-      [req.user.id, room_id, booking_date, slot_start, slot_end, purpose, notes]
-    );
-    res.json({ message: "Thành công", booking: newBooking.rows[0] });
+    const conflict = await db.query(`SELECT * FROM bookings WHERE room_id=$1 AND booking_date=$2 AND status NOT IN ('cancelled','rejected') AND (slot_start < $4 AND slot_end > $3)`, [room_id, booking_date, slot_start, slot_end]);
+    if (conflict.rows.length > 0) return res.status(409).json({ error: "Trùng lịch" });
+    const newBooking = await db.query(`INSERT INTO bookings (user_id, room_id, booking_date, slot_start, slot_end, purpose, notes, status) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending') RETURNING *`, [req.user.id, room_id, booking_date, slot_start, slot_end, purpose, notes]);
+    res.json({ message: "OK", booking: newBooking.rows[0] });
   } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
 
 app.get("/api/bookings", authenticateToken, async (req, res) => {
   try {
     const result = await db.query(`SELECT b.*, r.name as room_name, r.type as room_type FROM bookings b JOIN rooms r ON b.room_id = r.id WHERE b.user_id = $1 ORDER BY b.booking_date DESC`, [req.user.id]);
-    const formatted = result.rows.map(row => ({
-      id: row.id, booking_date: row.booking_date, slot_start: row.slot_start, slot_end: row.slot_end, status: row.status, purpose: row.purpose, room: { name: row.room_name, type: row.room_type }
-    }));
+    const formatted = result.rows.map(row => ({ id: row.id, booking_date: row.booking_date, slot_start: row.slot_start, slot_end: row.slot_end, status: row.status, purpose: row.purpose, room: { name: row.room_name, type: row.room_type } }));
     res.json(formatted);
   } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
@@ -356,56 +336,40 @@ app.get("/api/bookings/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const result = await db.query(`SELECT b.*, r.name as room_name, r.type as room_type, r.image_url, p.full_name, p.student_id, p.email FROM bookings b JOIN rooms r ON b.room_id = r.id JOIN profiles p ON b.user_id = p.id WHERE b.id = $1`, [id]);
-    if (result.rows.length === 0) return res.status(404).json({ error: "Không tìm thấy" });
-    
+    if (result.rows.length === 0) return res.status(404).json({ error: "Not found" });
     const row = result.rows[0];
-    const booking = {
-      id: row.id, booking_date: row.booking_date, slot_start: row.slot_start, slot_end: row.slot_end, status: row.status, purpose: row.purpose,
-      room: { name: row.room_name, type: row.room_type, image: row.image_url }, profile: { full_name: row.full_name, student_id: row.student_id, email: row.email }
-    };
-    res.json(booking);
-  } catch (err) { res.status(500).json({ error: "Lỗi server" }); }
+    res.json({ id: row.id, booking_date: row.booking_date, slot_start: row.slot_start, slot_end: row.slot_end, status: row.status, purpose: row.purpose, room: { name: row.room_name, type: row.room_type, image: row.image_url }, profile: { full_name: row.full_name, student_id: row.student_id, email: row.email } });
+  } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
 
 app.patch("/api/bookings/:id/cancel", authenticateToken, async (req, res) => {
   try {
-    const bookingId = req.params.id;
-    await db.query("UPDATE bookings SET status = 'cancelled' WHERE id = $1 AND user_id = $2", [bookingId, req.user.id]);
-    res.json({ message: "Đã hủy" });
-  } catch (err) { res.status(500).json({ error: "Lỗi hủy" }); }
+    await db.query("UPDATE bookings SET status = 'cancelled' WHERE id = $1 AND user_id = $2", [req.params.id, req.user.id]);
+    res.json({ message: "OK" });
+  } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
 
 app.patch("/api/bookings/:id/checkin", authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { id } = req.params;
-    await db.query("UPDATE bookings SET status = 'completed' WHERE id = $1", [id]);
-    res.json({ message: "Check-in thành công!" });
-  } catch (err) { res.status(500).json({ error: "Lỗi check-in" }); }
+    await db.query("UPDATE bookings SET status = 'completed' WHERE id = $1", [req.params.id]);
+    res.json({ message: "OK" });
+  } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
 
-// --- ADMIN ROUTES ---
 app.get("/api/admin/stats", authenticateToken, requireAdmin, async (req, res) => {
   try {
     const totalBookings = await db.query("SELECT COUNT(*) FROM bookings");
     const pendingCount = await db.query("SELECT COUNT(*) FROM bookings WHERE status = 'pending'");
     const totalUsers = await db.query("SELECT COUNT(*) FROM profiles WHERE role = 'student'");
     const activeRooms = await db.query("SELECT COUNT(*) FROM rooms WHERE is_active = true");
-    res.json({
-      totalBookings: parseInt(totalBookings.rows[0].count),
-      pendingCount: parseInt(pendingCount.rows[0].count),
-      totalUsers: parseInt(totalUsers.rows[0].count),
-      activeRooms: parseInt(activeRooms.rows[0].count),
-    });
+    res.json({ totalBookings: parseInt(totalBookings.rows[0].count), pendingCount: parseInt(pendingCount.rows[0].count), totalUsers: parseInt(totalUsers.rows[0].count), activeRooms: parseInt(activeRooms.rows[0].count) });
   } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
 
 app.get("/api/admin/bookings", authenticateToken, requireAdmin, async (req, res) => {
   try {
     const result = await db.query(`SELECT b.*, r.name as room_name, r.type as room_type, p.full_name, p.email, p.student_id FROM bookings b JOIN rooms r ON b.room_id = r.id JOIN profiles p ON b.user_id = p.id ORDER BY b.created_at DESC`);
-    const formatted = result.rows.map(row => ({
-      id: row.id, booking_date: row.booking_date, slot_start: row.slot_start, slot_end: row.slot_end, status: row.status, purpose: row.purpose, notes: row.notes,
-      room: { name: row.room_name, type: row.room_type }, profile: { full_name: row.full_name, email: row.email, student_id: row.student_id }
-    }));
+    const formatted = result.rows.map(row => ({ id: row.id, booking_date: row.booking_date, slot_start: row.slot_start, slot_end: row.slot_end, status: row.status, purpose: row.purpose, notes: row.notes, room: { name: row.room_name, type: row.room_type }, profile: { full_name: row.full_name, email: row.email, student_id: row.student_id } }));
     res.json(formatted);
   } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
@@ -415,20 +379,7 @@ app.patch("/api/admin/bookings/:id/:action", authenticateToken, requireAdmin, as
     const { id, action } = req.params;
     const status = action === 'approve' ? 'approved' : 'rejected';
     await db.query(`UPDATE bookings SET status = $1, approved_by = $2, approved_at = NOW() WHERE id = $3`, [status, req.user.id, id]);
-    res.json({ message: "Thành công" });
-  } catch (err) { res.status(500).json({ error: "Lỗi" }); }
-});
-
-app.post("/api/auth/change-password", authenticateToken, async (req, res) => {
-  try {
-    const { currentPassword, newPassword } = req.body;
-    const userResult = await db.query("SELECT password FROM profiles WHERE id = $1", [req.user.id]);
-    const valid = await bcrypt.compare(currentPassword, userResult.rows[0].password);
-    if (!valid) return res.status(400).json({ error: "Mật khẩu cũ sai" });
-    
-    const hash = await bcrypt.hash(newPassword, 10);
-    await db.query("UPDATE profiles SET password = $1 WHERE id = $2", [hash, req.user.id]);
-    res.json({ message: "Thành công" });
+    res.json({ message: "OK" });
   } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
 
