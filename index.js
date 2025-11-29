@@ -4,6 +4,7 @@ const dotenv = require("dotenv");
 const db = require("./db");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+
 // --- SWAGGER IMPORTS ---
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsdoc = require('swagger-jsdoc');
@@ -13,13 +14,13 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// --- CẤU HÌNH SWAGGER (FULL 16 API) ---
+// --- CẤU HÌNH SWAGGER (DẠNG OBJECT) ---
 const swaggerDefinition = {
   openapi: '3.0.0',
   info: {
     title: 'UIT Booking API',
     version: '1.0.0',
-    description: 'Tài liệu API đầy đủ cho hệ thống đặt phòng UIT',
+    description: 'Tài liệu API cho hệ thống đặt phòng UIT',
   },
   servers: [
     { url: process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}` },
@@ -31,7 +32,6 @@ const swaggerDefinition = {
   },
   security: [{ bearerAuth: [] }],
   paths: {
-    // --- AUTH ---
     '/api/auth/register': {
       post: {
         summary: 'Đăng ký tài khoản',
@@ -51,7 +51,7 @@ const swaggerDefinition = {
             }
           }
         },
-        responses: { 200: { description: 'OK' } }
+        responses: { 200: { description: 'Đăng ký thành công' } }
       }
     },
     '/api/auth/login': {
@@ -94,25 +94,7 @@ const swaggerDefinition = {
         responses: { 200: { description: 'OK' } }
       }
     },
-    '/api/auth/forgot-password': {
-      post: {
-        summary: 'Quên mật khẩu (Gửi email)',
-        tags: ['Auth'],
-        requestBody: {
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: { email: { type: 'string' } }
-              }
-            }
-          }
-        },
-        responses: { 200: { description: 'Email sent' } }
-      }
-    },
-
-    // --- USER ---
+    // Đã xóa phần forgot-password ở đây để tránh lỗi
     '/api/profile': {
       get: {
         summary: 'Lấy thông tin cá nhân',
@@ -138,21 +120,17 @@ const swaggerDefinition = {
         responses: { 200: { description: 'OK' } }
       }
     },
-
-    // --- ROOMS ---
     '/api/rooms': {
       get: {
         summary: 'Lấy danh sách phòng',
         tags: ['Booking'],
-        security: [],
+        security: [], // Public
         responses: { 200: { description: 'OK' } }
       }
     },
-
-    // --- BOOKING ---
     '/api/bookings': {
       get: {
-        summary: 'Lịch sử đặt phòng của tôi',
+        summary: 'Lịch sử đặt phòng',
         tags: ['Booking'],
         responses: { 200: { description: 'OK' } }
       },
@@ -169,8 +147,7 @@ const swaggerDefinition = {
                   booking_date: { type: 'string' },
                   slot_start: { type: 'string' },
                   slot_end: { type: 'string' },
-                  purpose: { type: 'string' },
-                  notes: { type: 'string' }
+                  purpose: { type: 'string' }
                 }
               }
             }
@@ -181,7 +158,7 @@ const swaggerDefinition = {
     },
     '/api/bookings/check': {
       get: {
-        summary: 'Kiểm tra giờ bận (Check availability)',
+        summary: 'Kiểm tra giờ bận',
         tags: ['Booking'],
         parameters: [
           { name: 'roomId', in: 'query', schema: { type: 'string' } },
@@ -192,7 +169,7 @@ const swaggerDefinition = {
     },
     '/api/bookings/{id}': {
       get: {
-        summary: 'Xem chi tiết 1 booking (cho QR)',
+        summary: 'Xem chi tiết 1 booking',
         tags: ['Booking'],
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: { 200: { description: 'OK' } }
@@ -214,8 +191,6 @@ const swaggerDefinition = {
         responses: { 200: { description: 'OK' } }
       }
     },
-
-    // --- ADMIN ---
     '/api/admin/stats': {
       get: {
         summary: 'Thống kê hệ thống',
@@ -456,7 +431,6 @@ app.post("/api/auth/change-password", authenticateToken, async (req, res) => {
     res.json({ message: "Thành công" });
   } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
-
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
