@@ -4,8 +4,6 @@ const dotenv = require("dotenv");
 const db = require("./db");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
-
 // --- SWAGGER IMPORTS ---
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsdoc = require('swagger-jsdoc');
@@ -459,29 +457,6 @@ app.post("/api/auth/change-password", authenticateToken, async (req, res) => {
   } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
 
-app.post("/api/auth/forgot-password", async (req, res) => {
-  try {
-    const { email } = req.body;
-    const user = await db.query("SELECT * FROM profiles WHERE email = $1", [email]);
-    if (user.rows.length === 0) return res.status(404).json({ error: "Email không tồn tại" });
-
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-    });
-
-    await transporter.sendMail({
-      from: '"UIT Booking" <no-reply@uit.edu.vn>',
-      to: email,
-      subject: "Đặt lại mật khẩu",
-      text: "Vui lòng liên hệ Admin để đặt lại mật khẩu.", 
-    });
-    res.json({ message: "Đã gửi email" });
-  } catch (err) { 
-    console.error(err);
-    res.status(500).json({ error: "Lỗi gửi mail (Kiểm tra .env)" }); 
-  }
-});
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
