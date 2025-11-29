@@ -5,7 +5,6 @@ const db = require("./db");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
-// --- SWAGGER IMPORTS ---
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsdoc = require('swagger-jsdoc');
 
@@ -14,7 +13,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// --- CẤU HÌNH SWAGGER (OBJECT CHUẨN JS) ---
+// --- CẤU HÌNH SWAGGER (Đã kiểm tra dấu phẩy) ---
 const swaggerDefinition = {
   openapi: '3.0.0',
   info: {
@@ -53,7 +52,7 @@ const swaggerDefinition = {
         },
         responses: { 200: { description: 'OK' } }
       }
-    }, // <--- DẤU PHẨY QUAN TRỌNG
+    },
     '/api/auth/login': {
       post: {
         summary: 'Đăng nhập',
@@ -73,7 +72,7 @@ const swaggerDefinition = {
         },
         responses: { 200: { description: 'OK' } }
       }
-    }, // <--- DẤU PHẨY QUAN TRỌNG
+    },
     '/api/auth/change-password': {
       post: {
         summary: 'Đổi mật khẩu',
@@ -93,7 +92,7 @@ const swaggerDefinition = {
         },
         responses: { 200: { description: 'OK' } }
       }
-    }, // <--- DẤU PHẨY QUAN TRỌNG
+    },
     '/api/profile': {
       get: {
         summary: 'Lấy thông tin cá nhân',
@@ -118,7 +117,7 @@ const swaggerDefinition = {
         },
         responses: { 200: { description: 'OK' } }
       }
-    }, // <--- DẤU PHẨY QUAN TRỌNG
+    },
     '/api/rooms': {
       get: {
         summary: 'Lấy danh sách phòng',
@@ -126,7 +125,7 @@ const swaggerDefinition = {
         security: [],
         responses: { 200: { description: 'OK' } }
       }
-    }, // <--- DẤU PHẨY QUAN TRỌNG
+    },
     '/api/bookings': {
       get: {
         summary: 'Lịch sử đặt phòng',
@@ -154,7 +153,7 @@ const swaggerDefinition = {
         },
         responses: { 200: { description: 'OK' } }
       }
-    }, // <--- DẤU PHẨY QUAN TRỌNG
+    },
     '/api/bookings/check': {
       get: {
         summary: 'Kiểm tra giờ bận',
@@ -165,7 +164,7 @@ const swaggerDefinition = {
         ],
         responses: { 200: { description: 'OK' } }
       }
-    }, // <--- DẤU PHẨY QUAN TRỌNG
+    },
     '/api/bookings/{id}': {
       get: {
         summary: 'Xem chi tiết 1 booking',
@@ -173,7 +172,7 @@ const swaggerDefinition = {
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: { 200: { description: 'OK' } }
       }
-    }, // <--- DẤU PHẨY QUAN TRỌNG
+    },
     '/api/bookings/{id}/cancel': {
       patch: {
         summary: 'Hủy đặt phòng',
@@ -181,7 +180,7 @@ const swaggerDefinition = {
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: { 200: { description: 'OK' } }
       }
-    }, // <--- DẤU PHẨY QUAN TRỌNG
+    },
     '/api/bookings/{id}/checkin': {
       patch: {
         summary: 'Check-in (Quét QR)',
@@ -189,21 +188,21 @@ const swaggerDefinition = {
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: { 200: { description: 'OK' } }
       }
-    }, // <--- DẤU PHẨY QUAN TRỌNG
+    },
     '/api/admin/stats': {
       get: {
         summary: 'Thống kê hệ thống',
         tags: ['Admin'],
         responses: { 200: { description: 'OK' } }
       }
-    }, // <--- DẤU PHẨY QUAN TRỌNG
+    },
     '/api/admin/bookings': {
       get: {
         summary: 'Xem tất cả booking',
         tags: ['Admin'],
         responses: { 200: { description: 'OK' } }
       }
-    }, // <--- DẤU PHẨY QUAN TRỌNG
+    },
     '/api/admin/bookings/{id}/{action}': {
       patch: {
         summary: 'Duyệt hoặc Từ chối',
@@ -233,7 +232,6 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// 👉 ĐƯỜNG DẪN TÀI LIỆU API
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 
 // --- AUTH MIDDLEWARES ---
@@ -256,9 +254,7 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
-// ==========================================
-// API ROUTES (LOGIC)
-// ==========================================
+// --- API ROUTES ---
 
 app.post("/api/auth/register", async (req, res) => {
   try {
@@ -292,6 +288,19 @@ app.post("/api/auth/login", async (req, res) => {
   } catch (err) { res.status(500).json({ error: "Lỗi server" }); }
 });
 
+app.post("/api/auth/change-password", authenticateToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const userResult = await db.query("SELECT password FROM profiles WHERE id = $1", [req.user.id]);
+    const valid = await bcrypt.compare(currentPassword, userResult.rows[0].password);
+    if (!valid) return res.status(400).json({ error: "Mật khẩu cũ sai" });
+    
+    const hash = await bcrypt.hash(newPassword, 10);
+    await db.query("UPDATE profiles SET password = $1 WHERE id = $2", [hash, req.user.id]);
+    res.json({ message: "Thành công" });
+  } catch (err) { res.status(500).json({ error: "Lỗi" }); }
+});
+
 app.get("/api/profile", authenticateToken, async (req, res) => {
   try {
     const result = await db.query("SELECT id, email, full_name, student_id, phone, role FROM profiles WHERE id = $1", [req.user.id]);
@@ -317,8 +326,6 @@ app.get("/api/rooms", async (req, res) => {
 app.post("/api/bookings", authenticateToken, async (req, res) => {
   try {
     const { room_id, booking_date, slot_start, slot_end, purpose, notes } = req.body;
-    
-    // Check trùng
     const conflict = await db.query(
       `SELECT * FROM bookings WHERE room_id=$1 AND booking_date=$2 AND status NOT IN ('cancelled', 'rejected') AND (slot_start < $4 AND slot_end > $3)`,
       [room_id, booking_date, slot_start, slot_end]
@@ -413,19 +420,6 @@ app.patch("/api/admin/bookings/:id/:action", authenticateToken, requireAdmin, as
     const { id, action } = req.params;
     const status = action === 'approve' ? 'approved' : 'rejected';
     await db.query(`UPDATE bookings SET status = $1, approved_by = $2, approved_at = NOW() WHERE id = $3`, [status, req.user.id, id]);
-    res.json({ message: "Thành công" });
-  } catch (err) { res.status(500).json({ error: "Lỗi" }); }
-});
-
-app.post("/api/auth/change-password", authenticateToken, async (req, res) => {
-  try {
-    const { currentPassword, newPassword } = req.body;
-    const userResult = await db.query("SELECT password FROM profiles WHERE id = $1", [req.user.id]);
-    const valid = await bcrypt.compare(currentPassword, userResult.rows[0].password);
-    if (!valid) return res.status(400).json({ error: "Mật khẩu cũ sai" });
-    
-    const hash = await bcrypt.hash(newPassword, 10);
-    await db.query("UPDATE profiles SET password = $1 WHERE id = $2", [hash, req.user.id]);
     res.json({ message: "Thành công" });
   } catch (err) { res.status(500).json({ error: "Lỗi" }); }
 });
